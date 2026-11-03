@@ -1,0 +1,18 @@
+G2Tools -- the AmigaOS programs of the G2 Amiga, release 1.0
+EPROM Foundry Inc., pano-g2-amiga
+
+Install:  in a Shell, type  Execute G2Tools:Install
+
+C:serialmon               serial port monitor, loopback test, terminal, file transfers
+C:midimon                 MIDI monitor and loopback tester
+C:ftdimon                 FT2232H: pins, JTAG, SPI flash, EEPROM (GPL-2.0-or-later)
+C:flashmon                the G2 configuration flash: read, verify, write, bitstreams
+C:PanoTCP                 bsdsocket.library 4 on the firmware's TCP/IP stack
+C:PANOFS                  lets the firmware write into HD0: while AmigaOS runs
+C:lsz, C:lrz              ZMODEM, YMODEM, XMODEM (lrzsz 0.12.20, GPL-2.0)
+L:share-handler           the USBStick: volume (DEVS:DOSDrivers/SHARE)
+DEVS:g2serial.device      serial.device commands on the G2 serial FIFO board or Paula
+DEVS:panoflash.device     the configuration flash for flashmon
+DEVS:AHI/g2.audio         AHI driver for the Toccata path (mode file DEVS:AudioModes/G2)
+
+Source: https://github.com/mikewolak/pano-g2-amiga

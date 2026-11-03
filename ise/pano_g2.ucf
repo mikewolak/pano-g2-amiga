@@ -1,0 +1,494 @@
+# Copyright (c) 2026 Mike Wolak, EPROM Foundry Inc.  All rights reserved.
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# pano-g2-amiga: licensed for non-commercial use only; the terms are in LICENSE at the top of the repository.
+############################################################################
+# pano_g2.ucf -- Pano Logic G2 revision C, XC6SLX100-2FGG484, stage 1 (rtl/g2/pano_g2_top.v)
+# Mike Wolak, EPROM Foundry Inc.
+#
+# Only the nets the design uses.  Balls, directions and I/O standards are those of
+# docs/g2/g2_pins_reference.ucf; the ball functions quoted are from the Xilinx package
+# file 6slx100fgg484pkg.txt.
+#
+# VCCAUX = 2.5.  The board rail is not measured.  Constraint sets disagree
+# (2.5 in the reverse-engineered pin list and the LiteX platforms, 3.3 in one revision C
+# project); the DDR2 memory controller configuration that has run on a
+# G2 (MIG 3.92, MCB1) and the MIG output this design uses
+# (ise/g2ddr/g2_ddr_impl_top.ucf) are built with 2.5.  The value sets the I/O timing model and
+# the I/O standard rules in the tools.
+CONFIG VCCAUX = "2.5";
+CONFIG MCB_PERFORMANCE = STANDARD;
+
+#---------------------------------------------------------------------------
+# Clocks
+#---------------------------------------------------------------------------
+# Y13: CLK125 of the 88E1119R.  125 MHz with GMII_RST_N (R11) held high, which the design
+# does; 25 MHz only before the PHY leaves reset, while the PLL is held in reset.
+NET "osc_clk"      LOC = Y13  | IOSTANDARD = LVCMOS33;            # IO_L30P_GCLK1_D13_2
+NET "osc_clk" TNM_NET = "osc_clk";
+TIMESPEC "TS_osc_clk" = PERIOD "osc_clk" 8 ns HIGH 50%;
+# The outputs of the PLL in g2_mcb_clk (the MCB 2x clocks, clk_sys 50 MHz, mcb_drp_clk 62.5 MHz, clk_125,
+# clk_icap 10 MHz) are derived from TS_osc_clk by the tools; osc_clk is referenced by this PERIOD only, which
+# derivation requires.
+
+# CFGMCLK of STARTUP_SPARTAN6: 50 MHz nominal, +/-50 %.  Constrained at the fastest value.
+NET "cfg_clk" TNM_NET = "cfg_clk";
+TIMESPEC "TS_cfg_clk" = PERIOD "cfg_clk" 13.33 ns HIGH 50%;
+
+# Ethernet clocks from the PHY (rtl/g2/g2_gmac.v).  RX_CLK: 125 MHz at 1000 Mb/s, 25 and 2.5 MHz at 100 and 10 Mb/s,
+# on a BUFG, constrained at the fastest.  TX_CLK (MII only, 25 or 2.5 MHz) is not a clock in this design: it is sampled
+# as data by an IOB register in y13_clk (rtl/g2/g2_gmac_txd.v); the GMII transmit side runs on y13_clk (TS_osc_clk).
+NET "gmii_rx_clk"  LOC = AB11 | IOSTANDARD = LVCMOS33;            # IO_L32N_GCLK28_2
+NET "gmii_tx_clk"  LOC = Y11  | IOSTANDARD = LVCMOS33;            # IO_L32P_GCLK29_2
+NET "eth_rxc" TNM_NET = "eth_rxc";
+TIMESPEC "TS_eth_rxc" = PERIOD "eth_rxc" 8 ns HIGH 50%;
+
+#---------------------------------------------------------------------------
+# Clock-domain crossings.  Every crossing is a synchroniser, a toggle, or a value that is
+# static while the toggle travels (rtl/soc_ethlite.v, rtl/eth_cdc_fifo.v, rtl/g2/*).
+# Bounded with DATAPATHONLY at one period of the faster clock, not TIG.
+#---------------------------------------------------------------------------
+NET "clk_sys"     TNM_NET = "clk_sys";
+NET "clk_icap"    TNM_NET = "clk_icap";
+NET "mcb_drp_clk" TNM_NET = "clk_plb";
+NET "clk_cpu"     TNM_NET = "clk_cpu";
+# the CPU domain (75 MHz) and the fabric (50 MHz): every crossing is a wb_cdc handshake, a two-flop level
+# synchroniser or a status word; bounded at one period of the faster clock (clk_cpu 66.67 MHz)
+TIMESPEC "TS_cpu_to_sys"  = FROM "clk_cpu"  TO "clk_sys"  15 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_cpu"  = FROM "clk_sys"  TO "clk_cpu"  15 ns DATAPATHONLY;
+TIMESPEC "TS_cpu_to_icap" = FROM "clk_cpu"  TO "clk_icap" 15 ns DATAPATHONLY;
+TIMESPEC "TS_icap_to_cpu" = FROM "clk_icap" TO "clk_cpu"  15 ns DATAPATHONLY;
+TIMESPEC "TS_cpu_to_cfg"  = FROM "clk_cpu"  TO "cfg_clk"  15 ns DATAPATHONLY;
+TIMESPEC "TS_erx_to_cpu"  = FROM "eth_rxc"  TO "clk_cpu"  15 ns DATAPATHONLY;
+TIMESPEC "TS_cpu_to_erx"  = FROM "clk_cpu"  TO "eth_rxc"  15 ns DATAPATHONLY;
+# The MAC's transmit side in y13_clk (125 MHz), grouped by instance as the settle counters below are (a FROM:TO on the
+# osc_clk TNM would stop the tools deriving the PLL output PERIODs): every register of rtl/g2/g2_gmac_txd.v.  Into it,
+# levels, a start toggle and the frame length (static from the toggle until done); out of it, the done toggle.
+INST "u_soc/u_eth/u_txd/*" TNM = "etx_regs";
+TIMESPEC "TS_cpu_to_etx"  = FROM "clk_cpu"  TO "etx_regs" 8 ns DATAPATHONLY;
+TIMESPEC "TS_etx_to_cpu"  = FROM "etx_regs" TO "clk_cpu"  15 ns DATAPATHONLY;
+TIMESPEC "TS_cpu_to_plb"  = FROM "clk_cpu"  TO "clk_plb"  15 ns DATAPATHONLY;
+TIMESPEC "TS_plb_to_cpu"  = FROM "clk_plb"  TO "clk_cpu"  15 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_plb"  = FROM "clk_sys"  TO "clk_plb"  16 ns DATAPATHONLY;
+TIMESPEC "TS_plb_to_sys"  = FROM "clk_plb"  TO "clk_sys"  16 ns DATAPATHONLY;
+# The PLL reset (a register of the settle logic, CFGMCLK domain) and the BUFPLL_MCB lock are asynchronous.
+INST "u_settle/pll_rst" TNM = "pll_rst_reg";
+TIMESPEC "TS_pll_rst_tig" = FROM "pll_rst_reg" TIG;
+TIMESPEC "TS_erx_to_sys"  = FROM "eth_rxc"  TO "clk_sys"  20 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_erx"  = FROM "clk_sys"  TO "eth_rxc"  20 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_icap" = FROM "clk_sys"  TO "clk_icap" 20 ns DATAPATHONLY;
+TIMESPEC "TS_icap_to_sys" = FROM "clk_icap" TO "clk_sys"  20 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_cfg"  = FROM "clk_sys"  TO "cfg_clk"  15 ns DATAPATHONLY;
+# The settle counters in the Y13 domain, grouped by instance: a FROM:TO on the osc_clk TNM would stop the
+# tools deriving the PLL output PERIODs from TS_osc_clk.
+INST "u_settle/ydiv*" TNM = "y13_regs";
+INST "u_settle/yto*"  TNM = "y13_regs";
+TIMESPEC "TS_y13_to_cfg"  = FROM "y13_regs" TO "cfg_clk"  8 ns DATAPATHONLY;
+# Video clocks (rtl/vga/g2_video.v, ch7301_out.v): vclk 80 MHz (PLL), oclk 50..130 MHz (DCM_CLKGEN, reprogrammed per mode).
+# Crossings: register page and mode/reset synchronisers (clk_sys -> vclk, clk_sys -> oclk), the pixel FIFO's Gray
+# pointers (vclk <-> oclk), status flags back (vclk/oclk -> clk_sys).  Without these the tools time the crossings at
+# the derived common period of the related PLL/DCM clocks (0.96 ns at d5406df).
+NET "vclk"  TNM_NET = "vclk";
+NET "oclk1" TNM_NET = "oclk";
+TIMESPEC "TS_sys_to_vclk" = FROM "clk_sys" TO "vclk"    12.5 ns DATAPATHONLY;
+TIMESPEC "TS_vclk_to_sys" = FROM "vclk"    TO "clk_sys" 12.5 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_oclk" = FROM "clk_sys" TO "oclk"    7.69 ns DATAPATHONLY;
+TIMESPEC "TS_oclk_to_sys" = FROM "oclk"    TO "clk_sys" 7.69 ns DATAPATHONLY;
+TIMESPEC "TS_vclk_to_oclk" = FROM "vclk"   TO "oclk"    7.69 ns DATAPATHONLY;
+TIMESPEC "TS_oclk_to_vclk" = FROM "oclk"   TO "vclk"    7.69 ns DATAPATHONLY;
+# The output-clock reset of each head (rtl/vga/g2_video.v olock_n: NOT dcm_locked OR rst) asserts orst_s
+# asynchronously and is released through the two orst_s flops in oclk; the assertion path (through the PLL's RST and
+# LOCKED) is not a timed path.
+NET "u_vid1/olock_n" TIG;
+NET "u_vid2/olock_n" TIG;
+# Each head's output stage (rtl/vga/ch7301_out.v, oclk at up to 130 MHz, about 40 slices) beside its pins: head 1 on
+# the top edge, head 2 on the bottom edge, both in IO tile columns 58..74 (slices X100..X124).  Unplaced, the stages
+# spread over slice columns 37..109 and rows 38..189 and oclk paths of one look-up table carried 9 ns of route.
+INST "u_vid1/u_out/*" AREA_GROUP = "AG_out1";
+AREA_GROUP "AG_out1" RANGE = SLICE_X100Y170:SLICE_X125Y187;
+INST "u_vid2/u_out/*" AREA_GROUP = "AG_out2";
+AREA_GROUP "AG_out2" RANGE = SLICE_X100Y4:SLICE_X125Y21;
+
+#---------------------------------------------------------------------------
+# Ethernet, 88E1119R: GMII at 1000 Mb/s (TXD/RXD[7:0], GTX_CLK), MII at 10/100 (TXD/RXD[3:0], TX_CLK) on the same
+# balls (rtl/g2/g2_gmac.v).  RXD[7:4] (V9 R8 U9 Y9) are inputs from this design on; each keeps the pull-down it had as
+# an unused ball (UnusedPin:PullDown), so no ball the PHY sees at its reset changes state.
+#---------------------------------------------------------------------------
+NET "gmii_rst_n"   LOC = R11  | IOSTANDARD = LVCMOS33;            # IO_L40P_2
+NET "gmii_mdc"     LOC = AB6  | IOSTANDARD = LVCMOS33;            # IO_L49N_D4_2
+NET "gmii_mdio"    LOC = AA2  | IOSTANDARD = LVCMOS33 | PULLUP;   # IO_L64P_D8_2
+NET "gmii_gtx_clk" LOC = AA12 | IOSTANDARD = LVCMOS33;            # IO_L31P_GCLK31_D14_2
+NET "gmii_tx_en"   LOC = AA8  | IOSTANDARD = LVCMOS33;            # IO_L45P_2
+NET "gmii_tx_er"   LOC = AB8  | IOSTANDARD = LVCMOS33;            # IO_L45N_2
+NET "gmii_tx_d<0>" LOC = AB2  | IOSTANDARD = LVCMOS33;            # IO_L64N_D9_2
+NET "gmii_tx_d<1>" LOC = AB3  | IOSTANDARD = LVCMOS33;            # IO_L58N_2
+NET "gmii_tx_d<2>" LOC = AB4  | IOSTANDARD = LVCMOS33;            # IO_L57N_2
+NET "gmii_tx_d<3>" LOC = AB7  | IOSTANDARD = LVCMOS33;            # IO_L48N_RDWR_B_VREF_2
+NET "gmii_tx_d<4>" LOC = AB9  | IOSTANDARD = LVCMOS33;            # IO_L43N_2
+NET "gmii_tx_d<5>" LOC = AB10 | IOSTANDARD = LVCMOS33;            # IO_L41N_VREF_2
+NET "gmii_tx_d<6>" LOC = T7   | IOSTANDARD = LVCMOS33;            # IO_L60P_2
+NET "gmii_tx_d<7>" LOC = Y10  | IOSTANDARD = LVCMOS33;            # IO_L44N_2
+NET "gmii_rx_dv"   LOC = Y7   | IOSTANDARD = LVCMOS33;            # IO_L48P_D7_2
+NET "gmii_rx_er"   LOC = Y8   | IOSTANDARD = LVCMOS33;            # IO_L47N_2
+NET "gmii_rx_d<0>" LOC = Y3   | IOSTANDARD = LVCMOS33;            # IO_L58P_2
+NET "gmii_rx_d<1>" LOC = Y4   | IOSTANDARD = LVCMOS33;            # IO_L62N_D6_2
+NET "gmii_rx_d<2>" LOC = R9   | IOSTANDARD = LVCMOS33;            # IO_L59P_2
+NET "gmii_rx_d<3>" LOC = R7   | IOSTANDARD = LVCMOS33;            # IO_L60N_2
+NET "gmii_rx_d<4>" LOC = V9   | IOSTANDARD = LVCMOS33 | PULLDOWN; # IO_L50N_2
+NET "gmii_rx_d<5>" LOC = R8   | IOSTANDARD = LVCMOS33 | PULLDOWN; # IO_L59N_2
+NET "gmii_rx_d<6>" LOC = U9   | IOSTANDARD = LVCMOS33 | PULLDOWN; # IO_L50P_2
+NET "gmii_rx_d<7>" LOC = Y9   | IOSTANDARD = LVCMOS33 | PULLDOWN; # IO_L43P_2
+NET "gmii_int_n"   LOC = AA4  | IOSTANDARD = LVCMOS33;            # IO_L57P_2, function unconfirmed
+
+# GMII receive: the 88E1119R's RXD, RX_DV, RX_ER valid from 2.5 ns before to 0.5 ns after the RX_CLK rising edge (the
+# GMII driver window, IEEE 802.3 clause 35.4.2.3; the constraint of TVG spinal/Pano.ucf), sampled in IOB registers
+# behind a fixed IODELAY2 (rtl/g2/pano_g2_top.v RX_IDELAY).  MII (10/100) is inside this window with room to spare.
+TIMEGRP "gmii_rx_pads" = PADS("gmii_rx_d<*>" "gmii_rx_dv" "gmii_rx_er");
+TIMEGRP "gmii_rx_pads" OFFSET = IN 2.5 ns VALID 3 ns BEFORE "gmii_rx_clk" RISING;
+# GMII transmit: TXD, TX_EN, TX_ER from IOB registers on the rising edge of y13_clk, GTX_CLK from an ODDR2 that rises
+# on its falling edge.  Both are bounded from the Y13 pad so the report carries the two delays whose difference is the
+# setup and hold at the PHY (4 ns nominal each; IEEE 802.3 35.4.2.3 asks 2.0 ns setup, 0.0 ns hold at the receiver).
+TIMEGRP "gmii_tx_pads" = PADS("gmii_tx_d<*>" "gmii_tx_en" "gmii_tx_er");
+TIMEGRP "gmii_tx_pads" OFFSET = OUT 11 ns AFTER "osc_clk" RISING;
+NET "gmii_gtx_clk" OFFSET = OUT 15 ns AFTER "osc_clk" RISING;
+NET "gmii_tx_d<*>" DRIVE = 8 | SLEW = FAST;
+NET "gmii_tx_en"   DRIVE = 8 | SLEW = FAST;
+NET "gmii_tx_er"   DRIVE = 8 | SLEW = FAST;
+NET "gmii_gtx_clk" DRIVE = 8 | SLEW = FAST;
+
+#---------------------------------------------------------------------------
+# SPI configuration flash, M25P64.  Dual-purpose configuration pins, user I/O after
+# configuration with -g Persist:No (UG380 v2.11 Table 5-3).
+#---------------------------------------------------------------------------
+NET "spi_cs_n"     LOC = T5   | IOSTANDARD = LVCMOS33 | PULLUP;   # IO_L65N_CSO_B_2
+NET "spi_sck"      LOC = Y21  | IOSTANDARD = LVCMOS33;            # IO_L1P_CCLK_2
+NET "spi_mosi"     LOC = AB20 | IOSTANDARD = LVCMOS33;            # IO_L3N_MOSI_CSI_B_MISO0_2
+NET "spi_miso"     LOC = AA20 | IOSTANDARD = LVCMOS33;            # IO_L3P_D0_DIN_MISO_MISO1_2
+
+#---------------------------------------------------------------------------
+# Console UART on the HDMI DDC balls: 115200 8N1
+#---------------------------------------------------------------------------
+NET "hdmi_ddc_sda" LOC = AB19 | IOSTANDARD = LVCMOS33;            # IO_L5N_2, UART TX (Pano -> host)
+NET "hdmi_ddc_scl" LOC = AA21 | IOSTANDARD = LVCMOS33 | PULLUP;   # IO_L2P_CMPCLK_2, UART RX (host -> Pano)
+
+#---------------------------------------------------------------------------
+# Front panel
+#---------------------------------------------------------------------------
+NET "led_red"      LOC = E12  | IOSTANDARD = LVCMOS33;            # IO_L43P_0, active high
+NET "led_blue"     LOC = H13  | IOSTANDARD = LVCMOS33;            # IO_L46P_0, active high
+NET "led_green"    LOC = F13  | IOSTANDARD = LVCMOS33;            # IO_L45P_0, active high
+NET "pano_button"  LOC = H12  | IOSTANDARD = LVCMOS33 | PULLUP;   # IO_L44P_0, active low
+
+#---------------------------------------------------------------------------
+# USB: USB3300 ULPI PHY and USB2514 hub (rtl/g2/g2_usb_host.v; lines from ise/usbhost/g2_usb_host.ucf)
+#---------------------------------------------------------------------------
+NET "ulpi_clk"          LOC = C12 | IOSTANDARD = LVCMOS33;   # IO_L36N_GCLK14_0, 60 MHz from the USB3300
+NET "ulpi_dir"          LOC = C7  | IOSTANDARD = LVCMOS33;   # IO_L5P_0
+NET "ulpi_nxt"          LOC = C5  | IOSTANDARD = LVCMOS33;   # IO_L2P_0
+NET "ulpi_stp"          LOC = A5  | IOSTANDARD = LVCMOS33;   # IO_L2N_0
+NET "ulpi_data<0>"      LOC = A7  | IOSTANDARD = LVCMOS33;   # IO_L5N_0
+NET "ulpi_data<1>"      LOC = B8  | IOSTANDARD = LVCMOS33;   # IO_L6P_0
+NET "ulpi_data<2>"      LOC = A8  | IOSTANDARD = LVCMOS33;   # IO_L6N_0
+NET "ulpi_data<3>"      LOC = D6  | IOSTANDARD = LVCMOS33;   # IO_L3P_0
+NET "ulpi_data<4>"      LOC = C6  | IOSTANDARD = LVCMOS33;   # IO_L3N_0
+NET "ulpi_data<5>"      LOC = B6  | IOSTANDARD = LVCMOS33;   # IO_L4P_0
+NET "ulpi_data<6>"      LOC = A6  | IOSTANDARD = LVCMOS33;   # IO_L4N_0
+NET "ulpi_data<7>"      LOC = A4  | IOSTANDARD = LVCMOS33;   # IO_L1N_VREF_0
+NET "ulpi_reset"        LOC = C9  | IOSTANDARD = LVCMOS33;   # IO_L8P_0, USB3300 RESET, active high
+NET "usb_clk"           LOC = W12 | IOSTANDARD = LVCMOS33;   # IO_L29P_GCLK3_2, 24 MHz to USB3300 and USB2514
+NET "usb_hub_reset_n"   LOC = W11 | IOSTANDARD = LVCMOS33;   # IO_L42N_2, USB2514 reset, active low
+NET "brd_reset_out_n"   LOC = AA6 | IOSTANDARD = LVCMOS33 | PULLUP;     # RESET_OUT_N, function not traced; board page +0x40
+NET "brd_power_sleep"   LOC = C10 | IOSTANDARD = LVCMOS33 | PULLDOWN;   # POWER_SLEEP, function not traced; high stops the board
+NET "brd_sleep_req"     LOC = C13 | IOSTANDARD = LVCMOS33 | PULLDOWN;   # SLEEP_REQ, function not traced
+NET "i2c_v_scl"         LOC = E8  | IOSTANDARD = LVCMOS33;   # Chrontel control I2C clock (open drain, rtl/g2/g2_usb_host.v)
+NET "i2c_v_sda"         LOC = D9  | IOSTANDARD = LVCMOS33;   # Chrontel control I2C data
+NET "i2c_a_scl"         LOC = U17 | IOSTANDARD = LVCMOS33;   # codec control I2C clock
+NET "i2c_a_sda"         LOC = AB17 | IOSTANDARD = LVCMOS33;  # codec control I2C data
+# ULPI: 60 MHz from the PHY, unrelated to the PLL clocks; the core's asynchronous FIFOs carry every crossing.
+NET "ulpi_clk" TNM_NET = "ulpi_clk";
+TIMESPEC "TS_ulpi_clk" = PERIOD "ulpi_clk" 16.667 ns HIGH 50%;
+# Input window from the core's generated constraint (xps_usb_host_v2_1_0.tcl): PHY clock-to-out 2-5 ns.
+OFFSET = IN 11 ns VALID 13 ns BEFORE "ulpi_clk" RISING;   # USB3300 DS00001783C: data out 2.0-5.0 ns after the edge -> valid 11.667 ns before to 2.0 ns after
+# Output: USB3300 setup TSC/TSD 5.0 ns, hold 0 ns (DS00001783C): data must reach the PHY 16.667 - 5.0 = 11.667 ns
+# after the edge; 0.667 ns is kept for the board.  The core's clock comes from u_ulpi_pll in rtl/g2/g2_usb_host.v,
+# deskewed to the pad clock and lagging it by CLKOUT0_PHASE; the PLL output is the derived period constraint.
+OFFSET = OUT 11 ns AFTER "ulpi_clk" RISING;
+# Fast output slew and 16 mA drive on the ULPI outputs shorten the pad delay (Tioop 2.402 ns at 8 mA in the
+# 42e2192 report, where ulpi_data<7> missed OFFSET OUT by 0.469 ns with 4.474 ns of route to pad A4).
+NET "ulpi_data<*>" SLEW = FAST | DRIVE = 16;
+NET "ulpi_stp"     SLEW = FAST | DRIVE = 16;
+# Placement of the pad-side ULPI output logic next to its pads (bank 0, top edge, TIOB_X1..X5 Y191: A4 A5 A6 A7 B6 B8
+# C6 D6): the low-speed split patch (rtl/g2/g2_ulpi_split_patch.v: row, inv7, the LUT/MUXF7/MUXF8 of pad_do[7], the
+# pad_do[5:4] XORs, its table and counter) and the core's ULPI data output registers.  Unplaced, the tools put the
+# patch at SLICE_X4Y163 and the route to A4 cost 4.199 ns; OFFSET OUT above then failed by 0.478 to 1.329 ns (runs of
+# 4745c6f and earlier).  The range is empty in those runs.  No logic changes.
+INST "u_usb/u_split/*" AREA_GROUP = "AG_ulpi_out";
+INST "u_usb/u_core/host/I_USBHC_LM/I_LM_MLC/I_LC_ULPI_IF/ulpi_data_out_*" AREA_GROUP = "AG_ulpi_out";
+AREA_GROUP "AG_ulpi_out" RANGE = SLICE_X0Y176:SLICE_X11Y191;
+# The core's link control in the ULPI clock (I_LC_MAIN_LOGIC, I_LC_RX_CTRL, I_LC_TX_CTRL: about 310 slices) below
+# AG_ulpi_out, next to the pads: Dir and Nxt reach their state machines through up to five look-up tables, and unplaced
+# the three blocks spread over SLICE_X9..X81 with up to 10.7 ns of route on the OFFSET IN paths.  No logic changes.
+INST "u_usb/u_core/host/I_USBHC_LM/I_LM_MLC/I_LC_MAIN_LOGIC/*" AREA_GROUP = "AG_ulpi_link";
+INST "u_usb/u_core/host/I_USBHC_LM/I_LM_MLC/I_LC_RX_CTRL/*"    AREA_GROUP = "AG_ulpi_link";
+INST "u_usb/u_core/host/I_USBHC_LM/I_LM_MLC/I_LC_TX_CTRL/*"    AREA_GROUP = "AG_ulpi_link";
+AREA_GROUP "AG_ulpi_link" RANGE = SLICE_X0Y150:SLICE_X23Y175;
+
+#---------------------------------------------------------------------------
+# DDR2 chip A on MCB1 (rtl/g2/g2_ddr_port.v -> g2_ddr_mcb; MIG 3.92 output, ise/g2ddr/g2_ddr_impl_top.ucf)
+#---------------------------------------------------------------------------
+NET "u_ddr/u_mcb/memc_wrapper_inst/mcb_ui_top_inst/mcb_raw_wrapper_inst/selfrefresh_mcb_mode" TIG;
+INST "u_ddr/u_mcb/memc_wrapper_inst/mcb_ui_top_inst/mcb_raw_wrapper_inst/gen_term_calib.mcb_soft_calibration_top_inst/mcb_soft_calibration_inst/DONE_SOFTANDHARD_CAL*" TIG;
+NET "u_ddr/u_mcb/memc_wrapper_inst/mcb_ui_top_inst/mcb_raw_wrapper_inst/gen_term_calib.mcb_soft_calibration_top_inst/mcb_soft_calibration_inst/CKE_Train" TIG;
+# DDR2 input termination on the FPGA side: UNTUNED_SPLIT_25 on DQ, DQS and UDQS (the board has no external
+# termination on the data lines); RZQ at C19.  Values of the working G2 DDR constraints in crwulff/panologic-g2.
+NET "mcb1_dram_dq[*]"   IN_TERM = UNTUNED_SPLIT_25;
+NET "mcb1_dram_dq[*]"   OUT_TERM = UNTUNED_50;
+NET "mcb1_dram_dqs"     IN_TERM = UNTUNED_SPLIT_25;
+NET "mcb1_dram_dqs_n"   IN_TERM = UNTUNED_SPLIT_25;
+NET "mcb1_dram_udqs"    IN_TERM = UNTUNED_SPLIT_25;
+NET "mcb1_dram_udqs_n"  IN_TERM = UNTUNED_SPLIT_25;
+NET "mcb1_dram_dq[*]"   IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_a[*]"    IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_ba[*]"   IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_dqs"     IOSTANDARD = DIFF_SSTL18_II;
+NET "mcb1_dram_udqs"    IOSTANDARD = DIFF_SSTL18_II;
+NET "mcb1_dram_dqs_n"   IOSTANDARD = DIFF_SSTL18_II;
+NET "mcb1_dram_udqs_n"  IOSTANDARD = DIFF_SSTL18_II;
+NET "mcb1_dram_ck"      IOSTANDARD = DIFF_SSTL18_II;
+NET "mcb1_dram_ck_n"    IOSTANDARD = DIFF_SSTL18_II;
+NET "mcb1_dram_cke"     IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_ras_n"   IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_cas_n"   IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_we_n"    IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_odt"     IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_dm"      IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_udm"     IOSTANDARD = SSTL18_II;
+NET "mcb1_rzq"          IOSTANDARD = SSTL18_II;
+NET "mcb1_dram_a[0]" LOC = F21;
+NET "mcb1_dram_a[10]" LOC = G19;
+NET "mcb1_dram_a[11]" LOC = F19;
+NET "mcb1_dram_a[12]" LOC = D22;
+NET "mcb1_dram_a[1]" LOC = F22;
+NET "mcb1_dram_a[2]" LOC = E22;
+NET "mcb1_dram_a[3]" LOC = G20;
+NET "mcb1_dram_a[4]" LOC = F20;
+NET "mcb1_dram_a[5]" LOC = K20;
+NET "mcb1_dram_a[6]" LOC = K19;
+NET "mcb1_dram_a[7]" LOC = E20;
+NET "mcb1_dram_a[8]" LOC = C20;
+NET "mcb1_dram_a[9]" LOC = C22;
+NET "mcb1_dram_ba[0]" LOC = J17;
+NET "mcb1_dram_ba[1]" LOC = K17;
+NET "mcb1_dram_cas_n" LOC = H22;
+NET "mcb1_dram_ck" LOC = H20;
+NET "mcb1_dram_ck_n" LOC = J19;
+NET "mcb1_dram_cke" LOC = D21;
+NET "mcb1_dram_dm" LOC = L19;
+NET "mcb1_dram_dq[0]" LOC = N20;
+NET "mcb1_dram_dq[10]" LOC = R20;
+NET "mcb1_dram_dq[11]" LOC = R22;
+NET "mcb1_dram_dq[12]" LOC = U20;
+NET "mcb1_dram_dq[13]" LOC = U22;
+NET "mcb1_dram_dq[14]" LOC = V21;
+NET "mcb1_dram_dq[15]" LOC = V22;
+NET "mcb1_dram_dq[1]" LOC = N22;
+NET "mcb1_dram_dq[2]" LOC = M21;
+NET "mcb1_dram_dq[3]" LOC = M22;
+NET "mcb1_dram_dq[4]" LOC = J20;
+NET "mcb1_dram_dq[5]" LOC = J22;
+NET "mcb1_dram_dq[6]" LOC = K21;
+NET "mcb1_dram_dq[7]" LOC = K22;
+NET "mcb1_dram_dq[8]" LOC = P21;
+NET "mcb1_dram_dq[9]" LOC = P22;
+NET "mcb1_dram_dqs" LOC = L20;
+NET "mcb1_dram_dqs_n" LOC = L22;
+NET "mcb1_dram_odt" LOC = G22;
+NET "mcb1_dram_ras_n" LOC = H21;
+NET "mcb1_dram_udm" LOC = M20;
+NET "mcb1_dram_udqs" LOC = T21;
+NET "mcb1_dram_udqs_n" LOC = T22;
+NET "mcb1_dram_we_n" LOC = H19;
+NET "mcb1_rzq" LOC = C19;
+
+# ---- DDR2 chip B (MCB3, bank 3): self-test.  RZQ N7 and IN_TERM UNTUNED_SPLIT_25 as crwulff/panologic-g2 Pano.ucf
+NET "u_mcb3/memc_wrapper_inst/mcb_ui_top_inst/mcb_raw_wrapper_inst/selfrefresh_mcb_mode" TIG;
+INST "u_mcb3/memc_wrapper_inst/mcb_ui_top_inst/mcb_raw_wrapper_inst/gen_term_calib.mcb_soft_calibration_top_inst/mcb_soft_calibration_inst/DONE_SOFTANDHARD_CAL*" TIG;
+NET "u_mcb3/memc_wrapper_inst/mcb_ui_top_inst/mcb_raw_wrapper_inst/gen_term_calib.mcb_soft_calibration_top_inst/mcb_soft_calibration_inst/CKE_Train" TIG;
+NET "mcb3_dram_dq[*]"                                 IN_TERM = UNTUNED_SPLIT_25;
+NET "mcb3_dram_dqs"                                   IN_TERM = UNTUNED_SPLIT_25;
+NET "mcb3_dram_dqs_n"                                 IN_TERM = UNTUNED_SPLIT_25;
+NET "mcb3_dram_udqs"                                  IN_TERM = UNTUNED_SPLIT_25;
+NET "mcb3_dram_udqs_n"                                IN_TERM = UNTUNED_SPLIT_25;
+NET  "mcb3_dram_dq[*]"                               IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_a[*]"                                IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_ba[*]"                               IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_dqs"                                 IOSTANDARD = DIFF_SSTL18_II ;
+NET  "mcb3_dram_udqs"                                IOSTANDARD = DIFF_SSTL18_II ;
+NET  "mcb3_dram_dqs_n"                               IOSTANDARD = DIFF_SSTL18_II ;
+NET  "mcb3_dram_udqs_n"                              IOSTANDARD = DIFF_SSTL18_II ;
+NET  "mcb3_dram_ck"                                  IOSTANDARD = DIFF_SSTL18_II ;
+NET  "mcb3_dram_ck_n"                                IOSTANDARD = DIFF_SSTL18_II ;
+NET  "mcb3_dram_cke"                                 IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_ras_n"                               IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_cas_n"                               IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_we_n"                                IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_odt"                                 IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_dm"                                  IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_udm"                                 IOSTANDARD = SSTL18_II ;
+NET  "mcb3_rzq"                                      IOSTANDARD = SSTL18_II ;
+NET  "mcb3_dram_a[0]"                            LOC = "H2" ;
+NET  "mcb3_dram_a[10]"                           LOC = "G4" ;
+NET  "mcb3_dram_a[11]"                           LOC = "C1" ;
+NET  "mcb3_dram_a[12]"                           LOC = "D1" ;
+NET  "mcb3_dram_a[1]"                            LOC = "H1" ;
+NET  "mcb3_dram_a[2]"                            LOC = "H5" ;
+NET  "mcb3_dram_a[3]"                            LOC = "K6" ;
+NET  "mcb3_dram_a[4]"                            LOC = "F3" ;
+NET  "mcb3_dram_a[5]"                            LOC = "K3" ;
+NET  "mcb3_dram_a[6]"                            LOC = "J4" ;
+NET  "mcb3_dram_a[7]"                            LOC = "H6" ;
+NET  "mcb3_dram_a[8]"                            LOC = "E3" ;
+NET  "mcb3_dram_a[9]"                            LOC = "E1" ;
+NET  "mcb3_dram_ba[0]"                           LOC = "G3" ;
+NET  "mcb3_dram_ba[1]"                           LOC = "G1" ;
+NET  "mcb3_dram_cas_n"                           LOC = "K4" ;
+NET  "mcb3_dram_ck"                              LOC = "H4" ;
+NET  "mcb3_dram_ck_n"                            LOC = "H3" ;
+NET  "mcb3_dram_cke"                             LOC = "D2" ;
+NET  "mcb3_dram_dm"                              LOC = "L4" ;
+NET  "mcb3_dram_dq[0]"                           LOC = "N3" ;
+NET  "mcb3_dram_dq[10]"                          LOC = "R3" ;
+NET  "mcb3_dram_dq[11]"                          LOC = "R1" ;
+NET  "mcb3_dram_dq[12]"                          LOC = "U3" ;
+NET  "mcb3_dram_dq[13]"                          LOC = "U1" ;
+NET  "mcb3_dram_dq[14]"                          LOC = "V2" ;
+NET  "mcb3_dram_dq[15]"                          LOC = "V1" ;
+NET  "mcb3_dram_dq[1]"                           LOC = "N1" ;
+NET  "mcb3_dram_dq[2]"                           LOC = "M2" ;
+NET  "mcb3_dram_dq[3]"                           LOC = "M1" ;
+NET  "mcb3_dram_dq[4]"                           LOC = "J3" ;
+NET  "mcb3_dram_dq[5]"                           LOC = "J1" ;
+NET  "mcb3_dram_dq[6]"                           LOC = "K2" ;
+NET  "mcb3_dram_dq[7]"                           LOC = "K1" ;
+NET  "mcb3_dram_dq[8]"                           LOC = "P2" ;
+NET  "mcb3_dram_dq[9]"                           LOC = "P1" ;
+NET  "mcb3_dram_dqs"                             LOC = "L3" ;
+NET  "mcb3_dram_dqs_n"                           LOC = "L1" ;
+NET  "mcb3_dram_odt"                             LOC = "J6" ;
+NET  "mcb3_dram_ras_n"                           LOC = "K5" ;
+NET  "mcb3_dram_udm"                             LOC = "M3" ;
+NET  "mcb3_dram_udqs"                            LOC = "T2" ;
+NET  "mcb3_dram_udqs_n"                          LOC = "T1" ;
+NET  "mcb3_dram_we_n"                            LOC = "F2" ;
+NET  "mcb3_rzq"                                  LOC = N7 ;
+NET "mcb3_dram_dq[*]"   OUT_TERM = UNTUNED_50;
+
+#---------------------------------------------------------------------------
+# Video: CH7301C #1 (DVI-I) and #2 (micro-HDMI), rtl/vga/g2_video.v; both encoders on the Chrontel I2C bus E8/D9 of the USB
+# wrapper (rtl/g2/g2_usb_host.v +0x28, shared with the video page).  The HDMI DDC balls stay the console UART.  Data and
+# syncs leave ODDR2s on oclk (2 x pixel clock, 50..130 MHz and 53.571 MHz for mode 4); XCLK is the same ODDR2 pair.
+#---------------------------------------------------------------------------
+NET "dvi_d[0]"             LOC = D17  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L66N_SCP0_0  [T,Tsp] T:36 V1_D[0]
+NET "dvi_d[1]"             LOC = A14  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L50N_0  [T,Tsp] T:37 V1_D[1]
+NET "dvi_d[2]"             LOC = A15  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L51N_0  [T,Tsp] T:38 V1_D[2]
+NET "dvi_d[3]"             LOC = A16  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L63N_SCP6_0  [T,Tsp] T:39 V1_D[3]
+NET "dvi_d[4]"             LOC = A17  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L64N_SCP4_0  [T,Tsp] T:40 V1_D[4]
+NET "dvi_d[5]"             LOC = A18  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L65N_SCP2_0  [T,Tsp] T:41 V1_D[5]
+NET "dvi_d[6]"             LOC = D14  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L49P_0  [T,Tsp] T:42 V1_D[6]
+NET "dvi_d[7]"             LOC = B14  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L50P_0  [T,Tsp] T:43 V1_D[7]
+NET "dvi_d[8]"             LOC = B16  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L63P_SCP7_0  [T,Tsp] T:44 V1_D[8]
+NET "dvi_d[9]"             LOC = B18  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L65P_SCP3_0  [T,Tsp] T:45 V1_D[9]
+NET "dvi_d[10]"            LOC = E16  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L66P_SCP1_0  [T,Tsp] T:46 V1_D[10]
+NET "dvi_d[11]"            LOC = D15  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L62P_0  [T,Tsp] T:47 V1_D[11]
+NET "dvi_xclk_p"           LOC = E14  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L47P_0  [T,Tsp] T:48 V1_XCLK_P
+NET "dvi_xclk_n"           LOC = F15  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L47N_0  [T,Tsp] T:49 V1_XCLK_N
+NET "dvi_h"                LOC = F12  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L44N_0  [T,Tsp] T:50 V1_HSYNC -- HSYNC
+NET "dvi_v"                LOC = C16  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L62N_VREF_0  [T,Tsp] T:51 V1_VSYNC -- VSYNC
+NET "dvi_de"               LOC = F14  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b0 IO_L48P_0  [T,Tsp] T:52 V1_DE
+NET "dvi_reset_n"          LOC = C15  | IOSTANDARD = LVCMOS33;   # out b0 IO_L51P_0  [T,Tsp] T:53 V1_RESET_N -- T-README B2B ta
+NET "dvi_hpint_n"          LOC = D13  | IOSTANDARD = LVCMOS33;   # in  b0 IO_L45N_0  [T] T:56 V1_HPINT -- CH7301C hot-plug inte
+NET "hdmi_d[0]"            LOC = T18  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L4P_2  [T,Tsp] T:59 V2_D[0]
+NET "hdmi_d[1]"            LOC = U16  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L8N_2  [T,Tsp] T:60 V2_D[1]
+NET "hdmi_d[2]"            LOC = V17  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L11P_2  [T,Tsp] T:61 V2_D[2]
+NET "hdmi_d[3]"            LOC = V19  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L9P_2  [T,Tsp] T:62 V2_D[3]
+NET "hdmi_d[4]"            LOC = V18  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L9N_2  [T,Tsp] T:63 V2_D[4]
+NET "hdmi_d[5]"            LOC = W17  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L11N_2  [T,Tsp] T:64 V2_D[5]
+NET "hdmi_d[6]"            LOC = Y17  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L15P_2  [T,Tsp] T:65 V2_D[6]
+NET "hdmi_d[7]"            LOC = Y15  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L21P_2  [T,Tsp] T:66 V2_D[7]
+NET "hdmi_d[8]"            LOC = Y18  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L6N_2  [T,Tsp] T:67 V2_D[8]
+NET "hdmi_d[9]"            LOC = Y19  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L5P_2  [T,Tsp] T:68 V2_D[9]
+NET "hdmi_d[10]"           LOC = AB21 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L2N_CMPMOSI_2  [T,Tsp] T:69 V2_D[10]
+NET "hdmi_d[11]"           LOC = T17  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L4N_VREF_2  [T,Tsp] T:70 V2_D[11]
+NET "hdmi_xclk_p"          LOC = T15  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L7N_2  [T,Tsp] T:71 V2_XCLK_P
+NET "hdmi_h"               LOC = AB15 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L21N_2  [T,Tsp] T:72 V2_HSYNC -- HSYNC
+NET "hdmi_v"               LOC = T16  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L7P_2  [T,Tsp] T:73 V2_VSYNC -- VSYNC
+NET "hdmi_de"              LOC = AB16 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 24;   # out b2 IO_L19N_2  [T,Tsp] T:74 V2_DE
+NET "hdmi_reset_n"         LOC = W18  | IOSTANDARD = LVCMOS33;   # out b2 IO_L6P_2  [T,Tsp] T:75 V2_RESET_N
+NET "hdmi_hpint_n"         LOC = AB18 | IOSTANDARD = LVCMOS33;   # in  b2 IO_L14N_D12_2  [T] T:78 V2_HPINT -- active low
+
+# Global clock sites.  XST implements the MCB's BUFGCE (u_clk/u_bufg_drp) as a BUFGMUX, whose paired site must stay
+# empty (both of a pair's inputs route through the mux); the placer put a BUFG in the pair once the video heads added
+# three global clocks (ERROR:Place:1023).  The sites are the ones the placer chose while the pair was free (7d4304a);
+# 14 of the 16 buffers are used (both video heads share one output clock DCM for that reason).
+INST "u_clk/u_bufg_drp"  LOC = BUFGMUX_X2Y10;
+INST "u_clk/u_bufg_sys"  LOC = BUFGMUX_X2Y2;
+INST "u_clk/u_bufg_icap" LOC = BUFGMUX_X2Y12;
+CONFIG PROHIBIT = BUFGMUX_X2Y9;
+
+#---------------------------------------------------------------------------
+# WM8750BL codec, I2S playback (rtl/g2/g2_audio.v): MCLK 24.000 MHz, the USB wrapper's clk24 (no global buffer is
+# free for another clock); the codec is the I2S slave (BCLK, DACLRC, DACDAT from the fabric).  Balls from docs/g2/g2_pins_reference.ucf.
+# The control I2C (U17/AB17) is i2c_a_* above.  ADCLRC (W9) and ADCDAT (R13) are not used: no input jack.
+#---------------------------------------------------------------------------
+NET "codec_mclk"    LOC = W14  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;   # IO_L20P_2, T:101 ADC_MCLK
+NET "codec_bclk"    LOC = AB13 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;   # IO_L30N_GCLK0_USERCCLK_2, T:96 ADC_BCLK
+NET "codec_daclrc"  LOC = U6   | IOSTANDARD = LVCMOS33;                             # IO_L63P_2, T:99 ADC_DACLRC
+NET "codec_dacdat"  LOC = Y14  | IOSTANDARD = LVCMOS33;                             # IO_L20N_2, T:100 ADC_DACDAT
+# Crossings clk_sys <-> clk24: the Gray-pointer FIFO (dp2/rtl/audio_ring.v) and the flush/lock synchronisers.
+NET "clk24_aud" TNM_NET = "clk24";   # the top-level wire from u_usb clk24_o, as vclk and oclk1 above
+TIMESPEC "TS_sys_to_clk24" = FROM "clk_sys" TO "clk24"   20 ns DATAPATHONLY;
+TIMESPEC "TS_clk24_to_sys" = FROM "clk24"   TO "clk_sys" 20 ns DATAPATHONLY;
+# The remaining ordered pairs of the clocks derived from TS_osc_clk (clk_cpu, clk_sys, clk_plb, clk_icap, vclk, oclk,
+# clk24, the y13_clk groups etx_regs and y13_regs), each bounded at one period of the faster clock, DATAPATHONLY, so no
+# crossing between two of them is timed as a synchronous path at their common derived period.  A pair the design does
+# not cross reports 0 paths; each pair that does is listed with its synchroniser.  Clocks
+# from pads without a PERIOD relation to TS_osc_clk (eth_rxc, ulpi_clk and the clocks derived from it, cfg_clk) are
+# unrelated and not analysed across; their crossings are listed there as well.
+TIMESPEC "TS_cpu_to_vclk"   = FROM "clk_cpu"  TO "vclk"     12.5 ns DATAPATHONLY;
+TIMESPEC "TS_vclk_to_cpu"   = FROM "vclk"     TO "clk_cpu"  12.5 ns DATAPATHONLY;
+TIMESPEC "TS_cpu_to_oclk"   = FROM "clk_cpu"  TO "oclk"     7.69 ns DATAPATHONLY;
+TIMESPEC "TS_oclk_to_cpu"   = FROM "oclk"     TO "clk_cpu"  7.69 ns DATAPATHONLY;
+TIMESPEC "TS_cpu_to_clk24"  = FROM "clk_cpu"  TO "clk24"    15 ns DATAPATHONLY;
+TIMESPEC "TS_clk24_to_cpu"  = FROM "clk24"    TO "clk_cpu"  15 ns DATAPATHONLY;
+TIMESPEC "TS_plb_to_vclk"   = FROM "clk_plb"  TO "vclk"     12.5 ns DATAPATHONLY;
+TIMESPEC "TS_vclk_to_plb"   = FROM "vclk"     TO "clk_plb"  12.5 ns DATAPATHONLY;
+TIMESPEC "TS_plb_to_oclk"   = FROM "clk_plb"  TO "oclk"     7.69 ns DATAPATHONLY;
+TIMESPEC "TS_oclk_to_plb"   = FROM "oclk"     TO "clk_plb"  7.69 ns DATAPATHONLY;
+TIMESPEC "TS_plb_to_icap"   = FROM "clk_plb"  TO "clk_icap" 16 ns DATAPATHONLY;
+TIMESPEC "TS_icap_to_plb"   = FROM "clk_icap" TO "clk_plb"  16 ns DATAPATHONLY;
+TIMESPEC "TS_plb_to_clk24"  = FROM "clk_plb"  TO "clk24"    16 ns DATAPATHONLY;
+TIMESPEC "TS_clk24_to_plb"  = FROM "clk24"    TO "clk_plb"  16 ns DATAPATHONLY;
+TIMESPEC "TS_icap_to_vclk"  = FROM "clk_icap" TO "vclk"     12.5 ns DATAPATHONLY;
+TIMESPEC "TS_vclk_to_icap"  = FROM "vclk"     TO "clk_icap" 12.5 ns DATAPATHONLY;
+TIMESPEC "TS_vclk_to_clk24" = FROM "vclk"     TO "clk24"    12.5 ns DATAPATHONLY;
+TIMESPEC "TS_clk24_to_vclk" = FROM "clk24"    TO "vclk"     12.5 ns DATAPATHONLY;
+TIMESPEC "TS_oclk_to_clk24" = FROM "oclk"     TO "clk24"    7.69 ns DATAPATHONLY;
+TIMESPEC "TS_clk24_to_oclk" = FROM "clk24"    TO "oclk"     7.69 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_etx"    = FROM "clk_sys"  TO "etx_regs" 8 ns DATAPATHONLY;
+TIMESPEC "TS_etx_to_sys"    = FROM "etx_regs" TO "clk_sys"  8 ns DATAPATHONLY;
+TIMESPEC "TS_plb_to_etx"    = FROM "clk_plb"  TO "etx_regs" 8 ns DATAPATHONLY;
+TIMESPEC "TS_etx_to_plb"    = FROM "etx_regs" TO "clk_plb"  8 ns DATAPATHONLY;
+TIMESPEC "TS_y13_to_cpu"    = FROM "y13_regs" TO "clk_cpu"  8 ns DATAPATHONLY;
+TIMESPEC "TS_y13_to_sys"    = FROM "y13_regs" TO "clk_sys"  8 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_y13"    = FROM "clk_sys"  TO "y13_regs" 8 ns DATAPATHONLY;
+
+#---------------------------------------------------------------------------
+# The CPU in one area group (the region of ise/floorplan/revb_cpu_ag.ucf, now in this file).  The CPU (rtl/vexiiriscv/VexRiscv_PanoG2.v and the core) in one region between the
+# block-RAM columns RAMB16_X1 and RAMB16_X2 and the DSP column DSP48_X1, rows 40-151: 68 x 112 slices (7,616) for the
+# core's 11,366 LUT and 7,206 FF of the out-of-context fit, 56 RAMB16 sites for its 11 RAMB16 and 41 RAMB8, 28 DSP48A1
+# for its 9.  Without it the placer spread the core over slice columns 1-127 and the clk_cpu paths were
+# route-dominated.  The site columns: RAMB16_X1 beside SLICE_X27, RAMB16_X2 beside SLICE_X43, DSP48_X1 beside SLICE_X33.
+INST "u_soc/u_cpu/*" AREA_GROUP = "AG_cpu";
+AREA_GROUP "AG_cpu" RANGE = SLICE_X20Y40:SLICE_X87Y151;
+AREA_GROUP "AG_cpu" RANGE = RAMB16_X1Y20:RAMB16_X2Y74;
+AREA_GROUP "AG_cpu" RANGE = RAMB8_X1Y20:RAMB8_X2Y75;
+AREA_GROUP "AG_cpu" RANGE = DSP48_X1Y10:DSP48_X1Y37;

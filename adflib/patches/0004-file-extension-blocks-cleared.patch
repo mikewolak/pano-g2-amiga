@@ -1,0 +1,38 @@
+--- a/src/adf_file.c
++++ b/src/adf_file.c
+@@ -816,7 +816,7 @@
+     } else {
+         // the file to truncate has at least one ext. block
+ 
+-        struct AdfFileExtBlock * const extBlock = malloc( sizeof ( struct AdfFileExtBlock ) );
++        struct AdfFileExtBlock * const extBlock = calloc( 1, sizeof ( struct AdfFileExtBlock ) );
+         if ( extBlock == NULL ) {
+             blocksToRemove->destroy( blocksToRemove );
+             return ADF_RC_MALLOC;
+@@ -980,7 +980,7 @@
+ 
+                 if ( file->currentExt == NULL ) {
+                     file->currentExt = (struct AdfFileExtBlock *)
+-                        malloc( sizeof(struct AdfFileExtBlock) );
++                        calloc( 1, sizeof(struct AdfFileExtBlock) );
+                     if ( file->currentExt == NULL ) {
+                         adfEnv.eFct( "%s: malloc", __func__ );
+                         return ADF_RC_MALLOC;
+@@ -1075,7 +1075,7 @@
+             /* the future block is the first file extension block */
+             if ( file->nDataBlock == ADF_MAX_DATABLK ) {
+                 file->currentExt = (struct AdfFileExtBlock *)
+-                    malloc( sizeof(struct AdfFileExtBlock) );
++                    calloc( 1, sizeof(struct AdfFileExtBlock) );
+                 if ( ! file->currentExt ) {
+                     adfSetBlockFree( file->volume, extSect );
+                     adfEnv.eFct( "%s: malloc", __func__ );
+@@ -1252,7 +1252,7 @@
+     } else {
+         if ( ! file->currentExt ) {
+             file->currentExt = ( struct AdfFileExtBlock * )
+-                malloc( sizeof ( struct AdfFileExtBlock ) );
++                calloc( 1, sizeof ( struct AdfFileExtBlock ) );
+             if ( ! file->currentExt ) {
+                 adfEnv.eFct( "%s: malloc", __func__ );
+                 file->curDataPtr = 0;  // invalidate data ptr

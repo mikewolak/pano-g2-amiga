@@ -1,0 +1,57 @@
+# Copyright (c) 2026 Mike Wolak, EPROM Foundry Inc.  All rights reserved.
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# pano-g2-amiga: licensed for non-commercial use only; the terms are in LICENSE at the top of the repository.
+#---------------------------------------------------------------------------
+# ise/pano_g2_amiga_aga.ucf -- the Amiga fabric with the 68020 and AGA (G2_AMIGA_AGA=1): ise/pano_g2_amiga.ucf and the TG68K two-cycle group below
+#.
+#
+# amiga_clk is clk_sys's PLL output (u_clk CLKOUT2, 50 MHz) through the BUFGCE u_amiga/u_bgce, in parallel with
+# clk_sys's BUFG, so the tools derive its PERIOD from the PLL (TS_u_clk_clk_sys_pll, 20 ns) and time every path between
+# the two clocks at 20 ns with the skew of the two buffers.  The Amiga gate may issue an edge on every clk_sys clock
+# (amiga/rtl/g2/amiga_g2.v), so no path of the core domain has more than one period, except inside the TG68K (below).
+#---------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------
+# G2_AMIGA_AGA=1 (ise/pano_g2_amiga_aga.prj: amiga/rtl/gen/nanomig_020.v, the TG68K in the place of FX68K, built with
+# CPU_SLOW14).  The TG68K advances on cpu_clkena, which under CPU_SLOW14 is never high at two consecutive core edges
+# (amiga/nanomig/src/minimig-aga/cpu_wrapper.v), and every core edge is a clk_sys edge (20 ns): so every path from a
+# register or RAM of the TG68K to a register or RAM of the TG68K has two clk_sys periods.  NanoMig's own constraints
+# for this configuration make the same paths two-cycle (amiga/nanomig/src/tang/nano20k/nanomig_020.sdc, cpu_inst_p,
+# its distributed register file included).  Paths into or out of the TG68K keep the derived 20 ns.  XST names the
+# register file RAM beside the TG68K instance (cpu_inst_p_Mram*), not inside it, so it is grouped by its own pattern.
+#---------------------------------------------------------------------------
+INST "u_amiga/u_core/cpu_wrapper/cpu_inst_p/*" TNM = "tg68k";
+INST "u_amiga/u_core/cpu_wrapper/cpu_inst_p_Mram*" TNM = "tg68k";
+TIMESPEC "TS_tg68k" = FROM "tg68k" TO "tg68k" 40 ns;
+
+# sysctrl.v's machine settings (CPU, chipset, video mode, memory sizes, turbo, volume) are written by the firmware
+# while sysctrl holds the machine in reset ("R" 1 from reset until the settings are sent, then "R" 0;
+# fw/amiga/amiga_main.c cold_start), and a change from the menu goes through a cold start again, so they are static
+# whenever the machine runs.  NanoMig's constraints for this configuration declare the same registers false paths
+# (amiga/nanomig/src/tang/nano20k/nanomig_020.sdc, set_false_path -from sysctrl/system_*).  The fast-memory, turbo and
+# volume settings are not used by this fabric (XST removes their registers), so only the others are named.
+INST "u_amiga/u_sys/system_cpu*"      TNM = "amiga_cfg";
+INST "u_amiga/u_sys/system_chipset*"  TNM = "amiga_cfg";
+INST "u_amiga/u_sys/system_video*"    TNM = "amiga_cfg";
+INST "u_amiga/u_sys/system_chipmem*"  TNM = "amiga_cfg";
+INST "u_amiga/u_sys/system_slowmem*"  TNM = "amiga_cfg";
+TIMESPEC "TS_amiga_cfg" = FROM "amiga_cfg" TIG;
+
+# AG_ulpi_out (ise/pano_g2.ucf) closed to other logic.  Open, the placer put one look-up table of the MAC's transmit
+# engine (u_soc/u_eth/u_txd/u_eng, the i == n compare, y13_clk 8 ns) at SLICE_X11Y176 inside the range, about 70 rows
+# from the engine's registers: 5.6 to 6.0 ns of route on each side and TS_osc_clk failed by up to 9.524 ns, 17 paths.
+AREA_GROUP "AG_ulpi_out" GROUP = CLOSED;
+
+#---------------------------------------------------------------------------
+# The MAC's receive side in y13_clk (rtl/g2/g2_gmac.v RX_OS, rtl/g2/pano_g2_top.v G2_AMIGA): RX_CLK is sampled as data,
+# so the receive registers of the main fabric's eth_rxc domain are in y13_clk here, and the eth_rxc constraints of
+# ise/pano_g2.ucf are removed by build_g2.sh.  Their crossings with clk_sys (the receive FIFO u_rq, the RX_CLK edge
+# count rxc_gray, RX_DV for the activity LED, rx_en) are bounded as the main fabric bounds them (TS_erx_to_sys,
+# TS_sys_to_erx: 20 ns DATAPATHONLY), grouped by instance as etx_regs is.
+#---------------------------------------------------------------------------
+INST "u_soc/u_eth/u_rq/*"    TNM = "erx_regs";
+INST "u_soc/u_eth/rxc_gray*" TNM = "erx_regs";
+INST "u_soc/u_eth/rxdv_q*"   TNM = "erx_regs";
+INST "u_soc/u_eth/rx_en_r*"  TNM = "erx_regs";
+TIMESPEC "TS_erxo_to_sys" = FROM "erx_regs" TO "clk_sys"  20 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_erxo" = FROM "clk_sys"  TO "erx_regs" 20 ns DATAPATHONLY;

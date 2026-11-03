@@ -1,0 +1,5 @@
+verilog work "../../amiga/rtl/gen/nanomig.v"
+verilog work "../../amiga/rtl/gen/companion.v"
+verilog work "../../amiga/rtl/g2/amiga_cache.v"
+verilog work "../../amiga/rtl/g2/amiga_serbridge.v"
+verilog work "../../amiga/rtl/g2/amiga_g2.v"

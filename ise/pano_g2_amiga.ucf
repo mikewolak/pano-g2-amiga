@@ -1,0 +1,27 @@
+# Copyright (c) 2026 Mike Wolak, EPROM Foundry Inc.  All rights reserved.
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# pano-g2-amiga: licensed for non-commercial use only; the terms are in LICENSE at the top of the repository.
+#---------------------------------------------------------------------------
+# ise/pano_g2_amiga.ucf -- the Amiga fabric's constraints, appended to the board UCF by build_g2.sh with G2_AMIGA=1
+#.
+#
+# amiga_clk is clk_sys's PLL output (u_clk CLKOUT2, 50 MHz) through the BUFGCE u_amiga/u_bgce, in parallel with
+# clk_sys's BUFG, so the tools derive its PERIOD from the PLL (TS_u_clk_clk_sys_pll, 20 ns) and time every path between
+# the two clocks at 20 ns with the skew of the two buffers.  The Amiga gate may issue an edge on every clk_sys clock
+# (amiga/rtl/g2/amiga_g2.v), so no path of the core domain has more than one period: unlike ise/pano_g2_snes.ucf,
+# this file relaxes nothing in the core.  It bounds the crossings of the MAC's receive side (below).
+#---------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------
+# The MAC's receive side in y13_clk (rtl/g2/g2_gmac.v RX_OS, rtl/g2/pano_g2_top.v G2_AMIGA): RX_CLK is sampled as data,
+# so the receive registers of the main fabric's eth_rxc domain are in y13_clk here, and the eth_rxc constraints of
+# ise/pano_g2.ucf are removed by build_g2.sh.  Their crossings with clk_sys (the receive FIFO u_rq, the RX_CLK edge
+# count rxc_gray, RX_DV for the activity LED, rx_en) are bounded as the main fabric bounds them (TS_erx_to_sys,
+# TS_sys_to_erx: 20 ns DATAPATHONLY), grouped by instance as etx_regs is.
+#---------------------------------------------------------------------------
+INST "u_soc/u_eth/u_rq/*"    TNM = "erx_regs";
+INST "u_soc/u_eth/rxc_gray*" TNM = "erx_regs";
+INST "u_soc/u_eth/rxdv_q*"   TNM = "erx_regs";
+INST "u_soc/u_eth/rx_en_r*"  TNM = "erx_regs";
+TIMESPEC "TS_erxo_to_sys" = FROM "erx_regs" TO "clk_sys"  20 ns DATAPATHONLY;
+TIMESPEC "TS_sys_to_erxo" = FROM "clk_sys"  TO "erx_regs" 20 ns DATAPATHONLY;

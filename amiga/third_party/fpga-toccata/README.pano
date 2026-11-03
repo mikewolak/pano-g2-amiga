@@ -1,0 +1,7 @@
+fpga-toccata: the MacroSystem Toccata Zorro II 16-bit sound card (playback; AD1848 registers, 1 KB FIFO, level 6
+interrupt at half empty), by Paul Honig (ranzbak), https://github.com/ranzbak/fpga-toccata, BSD-2-Clause (readme.md).
+The files here are the copy MiSTer's Minimig-AGA ships, https://github.com/MiSTer-devel/Minimig-AGA_MiSTer
+rtl/fpga-toccata/ at e47c3457b486d09daaf47c8934bda90cf7723045, unmodified (CRLF line endings as there): upstream
+97c60f6 with MiSTer's width fixes.  amiga/Makefile converts them with sv2v into rtl/gen/nanomig_020.v
+(ENABLE_TOCCATA); NanoMig's minimig.v, gary.v and cpu_wrapper.v carry the instance, the decode and the autoconfig
+entry (manufacturer 0x4754).

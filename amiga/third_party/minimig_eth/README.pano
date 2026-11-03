@@ -1,0 +1,16 @@
+Minimig-AGA Ethernet (NE2000 / RTL8019AS device model, presented to the Amiga as an X-Surf 100), by apolkosnik:
+https://github.com/apolkosnik/Minimig-AGA_MiSTer, branch Ethernet_shmem2, commit
+9598b936e35dbd38ec49388ce9b393f8550885e6 ("Offload fixed", 2026-06-29).  Licence: the repository's GPL-3.0
+(gpl.txt); the files carry no headers of their own.
+
+Copied unmodified:
+  rtl/ethernet.v, rtl/eth_ddr3_mailbox.v, rtl/eth_avalon_arbiter.v, rtl/eth_dma_addr_map.v   the device model,
+      its mailbox master and arbiter
+  rtl/cpu_wrapper.v, rtl/minimig.v, rtl/gary.v   that branch's Minimig files with the card's autoconfig entry and bus
+      glue, as the reference for the glue in NanoMig (not compiled here)
+  sim/*.v, sim/check_eth_abi.py   the bench suite (the compiled outputs of the source repository are left out)
+  extra/minimig_eth.cpp, .h, minimig_eth_abi.h   the MiSTer HPS bridge daemon: the reference for the firmware bridge
+
+The same model, extracted bus-agnostic and run on hardware under DOS and Windows 95, is georgemog's ao486 port
+(https://github.com/georgemog/ao486_MiSTer, branch ne2000, rtl/soc/ne2000/ne2000_core.v).  Used by
+docs/NETWORK_PLAN.md.

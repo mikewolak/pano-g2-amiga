@@ -1,0 +1,14 @@
+ADFlib 0.10.7, https://github.com/adflib/ADFlib, commit 73880de ("Update changelogs."), LGPL-2.1 (COPYING).
+Original author Laurent Clevy; contributors in AUTHORS.  src/ is upstream's src/ (the platform drivers src/generic
+and src/linux are left out), plus src/config.h for builds without autotools, with the patches in patches/ applied:
+
+  0001-adfTime2AmigaTime-leap-years.patch  adfTime2AmigaTime passed years since 1900 to adfIsLeap (2000 taken as
+                                           not leap: every date after February 2000 one day early) and left out
+                                           29 February for dates in March of a leap year.
+  0002, 0003                               see docs/AMIGA_FS.md 2.2.
+  0004-file-extension-blocks-cleared.patch the file extension blocks were taken from malloc and never cleared, so
+                                           longs 78-124 (r[45], info, nextSameHash) went to the disk with the heap's
+                                           previous contents; Kickstart 3.1's validator reads nextSameHash and stops
+                                           with "Block ... out of range".  calloc at the four places.
+
+Used by fw/amiga/afs.c (docs/AMIGA_FS.md).

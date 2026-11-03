@@ -1,0 +1,20 @@
+--- a/src/adf_dir.c
++++ b/src/adf_dir.c
+@@ -1013,6 +1013,8 @@
+          secType == ADF_ST_LSOFT  )
+     {
+         adfSwapEndian( (uint8_t *) ent, ADF_SWBL_LINK );
++    } else if ( secType == ADF_ST_ROOT ) {
++        adfSwapEndian( (uint8_t *) ent, ADF_SWBL_ROOT );   /* bmPages where entries hold the comment */
+     } else {
+         adfSwapEndian( (uint8_t *) ent, ADF_SWBL_ENTRY );
+     }
+@@ -1069,7 +1071,7 @@
+     memcpy( buf, ent, sizeof(struct AdfEntryBlock) );
+ 
+ #ifdef LITT_ENDIAN
+-    adfSwapEndian( buf, ADF_SWBL_ENTRY );
++    adfSwapEndian( buf, ent->secType == ADF_ST_ROOT ? ADF_SWBL_ROOT : ADF_SWBL_ENTRY );
+ #endif
+     newSum = adfNormalSum( buf, 20, sizeof(struct AdfEntryBlock) );
+     swapUint32ToPtr( buf + 20, newSum );

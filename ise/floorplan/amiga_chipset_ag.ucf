@@ -1,0 +1,25 @@
+# Copyright (c) 2026 Mike Wolak, EPROM Foundry Inc.  All rights reserved.
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# pano-g2-amiga: licensed for non-commercial use only; the terms are in LICENSE at the top of the repository.
+# The Minimig chipset of the Amiga slot in one area group (appended by ise/build_g2.sh with
+# UCF_EXTRA=floorplan/amiga_chipset_ag.ucf).  Agnus, Denise, Paula, the CIAs, Gary, the chip-RAM multiplexer, the
+# 68000 bus interface and the user I/O share the chip bus (custom_data_in, fanout about 45) and every amiga_clk path
+# that misses 20 ns runs from Agnus's DMA arbitration through that bus into a chipset register: 71 % of such a path
+# is route.  Unconstrained, the placer spreads these modules (about 1,470 slices) over slice columns 3-72 and rows
+# 90-180.  The region, slice columns 0-55 and rows 96-149 of the XC6SLX100 (3,024 slices), lies below the ULPI area
+# groups (rows 150 and up) and holds the rows the block RAM and DSP sites below cover.  Gayle (IDE) and the X-Surf
+# board are outside it.
+INST "u_amiga/u_core/minimig/AGNUS1/*"   AREA_GROUP = "AG_chipset";
+INST "u_amiga/u_core/minimig/DENISE1/*"  AREA_GROUP = "AG_chipset";
+INST "u_amiga/u_core/minimig/PAULA1/*"   AREA_GROUP = "AG_chipset";
+INST "u_amiga/u_core/minimig/CIAA1/*"    AREA_GROUP = "AG_chipset";
+INST "u_amiga/u_core/minimig/CIAB1/*"    AREA_GROUP = "AG_chipset";
+INST "u_amiga/u_core/minimig/GARY1/*"    AREA_GROUP = "AG_chipset";
+INST "u_amiga/u_core/minimig/RAM1/*"     AREA_GROUP = "AG_chipset";
+INST "u_amiga/u_core/minimig/CPU1/*"     AREA_GROUP = "AG_chipset";
+INST "u_amiga/u_core/minimig/USERIO1/*"  AREA_GROUP = "AG_chipset";
+INST "u_amiga/u_core/minimig/CONTROL1/*" AREA_GROUP = "AG_chipset";
+AREA_GROUP "AG_chipset" RANGE = SLICE_X0Y96:SLICE_X55Y149;
+AREA_GROUP "AG_chipset" RANGE = RAMB16_X0Y48:RAMB16_X3Y74;
+AREA_GROUP "AG_chipset" RANGE = RAMB8_X0Y48:RAMB8_X3Y75;
+AREA_GROUP "AG_chipset" RANGE = DSP48_X0Y22:DSP48_X2Y40;

@@ -1,0 +1,20 @@
+--- a/src/adf_util.c
++++ b/src/adf_util.c
+@@ -181,7 +181,7 @@
+     /* previous months days downto january */
+     if ( dt.mon > 1 ) {                        /* if previous month exists */
+         dt.mon--;
+-        if ( dt.mon > 2 && adfIsLeap( dt.year ) )  /* months after a leap february */
++        if ( dt.mon >= 2 && adfIsLeap( 1900 + dt.year ) )  /* months after a leap february */
+             jm[ 2 - 1 ] = 29;
+         while ( dt.mon > 0 ) {
+             *day = *day + jm[ dt.mon - 1 ];
+@@ -193,7 +193,7 @@
+     if ( dt.year > 78 ) {
+         dt.year--;
+         while ( dt.year >= 78 ) {
+-            if ( adfIsLeap( dt.year ) )
++            if ( adfIsLeap( 1900 + dt.year ) )
+                 *day = *day + 366;
+             else
+                 *day = *day + 365;

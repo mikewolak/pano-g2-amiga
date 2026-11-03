@@ -1,0 +1,28 @@
+; Install -- copies the G2 Amiga programs from this disk (G2Tools:) to the system disk (SYS:) and adds
+; "Run >NIL: C:PANOFS" to S:User-Startup once.  Run from a Shell:  Execute G2Tools:Install
+; Mike Wolak, EPROM Foundry Inc., pano-g2-amiga release 1.0.  Licence: PolyForm Noncommercial 1.0.0.
+FailAt 21
+Echo "G2 Amiga programs: installing to SYS:"
+Copy G2Tools:C/#? SYS:C/ CLONE QUIET
+Copy G2Tools:L/share-handler SYS:L/ CLONE QUIET
+Copy G2Tools:DEVS/g2serial.device SYS:DEVS/ CLONE QUIET
+Copy G2Tools:DEVS/panoflash.device SYS:DEVS/ CLONE QUIET
+If NOT EXISTS SYS:DEVS/AHI
+  MakeDir SYS:DEVS/AHI
+EndIf
+Copy G2Tools:DEVS/AHI/g2.audio SYS:DEVS/AHI/ CLONE QUIET
+If NOT EXISTS SYS:DEVS/AudioModes
+  MakeDir SYS:DEVS/AudioModes
+EndIf
+Copy G2Tools:DEVS/AudioModes/G2 SYS:DEVS/AudioModes/ CLONE QUIET
+Copy G2Tools:DEVS/DOSDrivers/SHARE SYS:DEVS/DOSDrivers/ CLONE QUIET
+If NOT EXISTS S:User-Startup
+  Echo >S:User-Startup ";"
+EndIf
+Search >NIL: S:User-Startup "C:PANOFS" QUIET
+If WARN
+  Echo >>S:User-Startup "Run >NIL: C:PANOFS"
+  Echo "S:User-Startup: PANOFS added"
+EndIf
+Echo "Done.  Reset the Amiga (setup page System, Reset): USBStick: mounts and PANOFS starts."
+Echo "bsdsocket.library: Run >NIL: C:PanoTCP     AHI 6 is needed for g2.audio."

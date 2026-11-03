@@ -1,0 +1,13 @@
+FileSystem     = L:share-handler
+Device         = scsi.device
+Unit           = 0
+Flags          = 0
+Surfaces       = 1
+BlocksPerTrack = 1
+Reserved       = 0
+LowCyl         = 0
+HighCyl        = 0
+StackSize      = 4096
+GlobVec        = -1
+Mount          = 1
+DosType        = 0x53485200

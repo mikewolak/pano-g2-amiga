@@ -1,0 +1,13 @@
+--- a/src/adf_bitm.c
++++ b/src/adf_bitm.c
+@@ -409,8 +409,9 @@
+         struct AdfBitmapExtBlock bitme;
+         while ( nBlock < vol->bitmap.size ) {
+             int i = 0;
++            memset( &bitme, 0, sizeof bitme );
+             while ( i < ADF_BM_PAGES_EXT_SIZE && nBlock < vol->bitmap.size ) {
+-                bitme.bmPages[ i ] = vol->bitmap.blocks[ nBlock ] = sectList[ i ];
++                bitme.bmPages[ i ] = vol->bitmap.blocks[ nBlock ] = sectList[ nBlock ];
+                 i++;
+                 nBlock++;
+             }
